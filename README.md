@@ -128,3 +128,54 @@ python evaluate_fid.py --dataset=imagenet --img_size=64 --channel_size=3\
          url={https://arxiv.org/abs/2412.06329}
 }
 ```
+
+
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=64 --channel_size=3\
+  --patch_size=2 --channels=768 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=128 --epochs=200 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet64-cond \
+  --data=/video_ssd/lpm/ImageNet/train &> imagenet64_train.out &
+
+
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=8 --channels=768 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=128 --epochs=200 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond-acc2 --acc 2 \
+  --data=/video_ssd/lpm/ImageNet/train &> imagenet256_p8_acc2_train.out &
+
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=8 --channels=768 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=128 --epochs=200 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond-acc8 --acc 8 \
+  --data=/video_ssd/lpm/ImageNet/train &> imagenet256_p8_acc8_train.out &
+
+
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=16 --channels=1152 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=256 --epochs=200 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond \
+  --data=/video_ssd/lpm/ImageNet/train &> imagenet256_p16_train.out &
+
+# equvailent batchsize 1024
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=16 --channels=1152 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=256 --epochs=1000 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond-acc4 \
+  --data=/video_ssd/lpm/ImageNet/train --acc 4 &> imagenet256_p16_acc4_train.out &
+
+torchrun --standalone --nproc_per_node=8 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=16 --channels=1152 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=512 --epochs=1000 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond-acc2 \
+  --data=/video_ssd/lpm/ImageNet/train --acc 2 &> imagenet256_p16_acc2_train.out && sleep 100d
+
+torchrun --standalone --nproc_per_node=4 prepare_fid_stats.py --dataset=imagenet --img_size=64 --data=/video_ssd/lpm/ImageNet/train
+
+torchrun --standalone --nproc_per_node=4 prepare_fid_stats.py --dataset=imagenet --img_size=256 --data=/video_ssd/lpm/ImageNet/train
+
+
+nohup torchrun --standalone --nproc_per_node=4 train.py --dataset=imagenet --img_size=256 --channel_size=3\
+  --patch_size=8 --channels=1024 --blocks=8 --layers_per_block=8\
+  --noise_std=0.05 --batch_size=384 --epochs=200 --lr=1e-4 --nvp --cfg=0 --drop_label=0.1\
+  --sample_freq=5 --logdir=runs/imagenet256-cond-acc2 --acc 2 \
+  --data=/video_ssd/lpm/ImageNet/train --ckpt &> imagenet256_p8_acc2_c1024_train.out &

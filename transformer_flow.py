@@ -3,7 +3,7 @@
 # Copyright (C) 2024 Apple Inc. All Rights Reserved.
 #
 import torch
-
+from torch.utils.checkpoint import checkpoint
 
 class Permutation(torch.nn.Module):
 
@@ -261,11 +261,14 @@ class Model(torch.nn.Module):
         layers_per_block: int,
         nvp: bool = True,
         num_classes: int = 0,
+        use_checkpoint: bool = False,
     ):
         super().__init__()
         self.img_size = img_size
         self.patch_size = patch_size
         self.num_patches = (img_size // patch_size) ** 2
+        self.use_checkpoint = use_checkpoint
+
         permutations = [PermutationIdentity(self.num_patches), PermutationFlip(self.num_patches)]
 
         blocks = []
@@ -302,9 +305,13 @@ class Model(torch.nn.Module):
         outputs = []
         logdets = torch.zeros((), device=x.device)
         for block in self.blocks:
-            x, logdet = block(x, y)
-            logdets = logdets + logdet
-            outputs.append(x)
+            if self.use_checkpoint and self.training:
+                def block_forward(x):
+                    out, logdet = block(x, y)
+                    return out, logdet
+                x, logdet = checkpoint(block_forward, x, use_reentrant=False)
+            else:
+                x, logdet = block(x, y)
         return x, outputs, logdets
 
     def update_prior(self, z: torch.Tensor):

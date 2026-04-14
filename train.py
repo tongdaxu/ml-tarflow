@@ -14,7 +14,8 @@ import torchvision as tv
 
 import transformer_flow
 import utils
-
+from tqdm import tqdm
+from torch.distributed.optim import ZeroRedundancyOptimizer
 
 def main(args):
     dist = utils.Distributed()
@@ -30,12 +31,9 @@ def main(args):
         print(f'{k:32s}: {v}')
 
     fid = utils.FID(reset_real_features=False, normalize=True).to('cuda')
-    fid_stats_file = args.data / f'{args.dataset}_{args.img_size}_fid_stats.pth'
-    if fid_stats_file.exists():
-        print(f'Loading FID stats from {fid_stats_file}')
-        fid.load_state_dict(torch.load(fid_stats_file, map_location='cpu', weights_only=False))
-    else:
-        raise FileNotFoundError(f'FID stats file "{fid_stats_file}" not found, run prepare_fid_stats.py.')
+    fid_stats_file = f'{args.dataset}_{args.img_size}_fid_stats.pth'
+    print(f'Loading FID stats from {fid_stats_file}')
+    fid.load_state_dict(torch.load(fid_stats_file, map_location='cpu', weights_only=False))
     dist.barrier()
 
     fixed_noise = torch.randn(
@@ -66,10 +64,11 @@ def main(args):
         layers_per_block=args.layers_per_block,
         nvp=args.nvp,
         num_classes=num_classes,
+        use_checkpoint=args.ckpt,
     ).to('cuda')
+
     optimizer = torch.optim.AdamW(model.parameters(), betas=(0.9, 0.95), lr=args.lr, weight_decay=1e-4)
     lr_schedule = utils.CosineLRSchedule(optimizer, len(data_loader), args.epochs * len(data_loader), 1e-6, args.lr)
-    scaler = torch.amp.GradScaler()
     if args.resume:
         ckpt = torch.load(args.resume, map_location='cpu')
         model.load_state_dict(ckpt)
@@ -106,9 +105,11 @@ def main(args):
         dist.barrier()
 
     print(f'{" Training ":-^80}')
+    step = 0
+    accum_steps = args.acc
     for epoch in range(args.epochs):
         metrics = utils.Metrics()
-        for x, y in data_loader:
+        for x, y in tqdm(data_loader, disable=not (dist.local_rank == 0)):
             x = x.cuda()
             if args.noise_type == 'gaussian':
                 eps = args.noise_std * torch.randn_like(x)
@@ -124,15 +125,20 @@ def main(args):
                 y = (1 - mask) * y - mask
             else:
                 y = None
-            optimizer.zero_grad()
+
             loss, (z, outputs, logdets) = compute_loss(x, y)
-            if not args.nvp:
-                model.update_prior(dist.gather_concat(z.detach().square().mean(dim=0, keepdim=True).sqrt()))
-            dist.barrier()
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-            current_lr = lr_schedule.step()
+            sync = (step + 1) % accum_steps == 0
+            if not sync:
+                with model_ddp.no_sync():
+                    (loss / accum_steps).backward()
+            else:
+                (loss / accum_steps).backward()
+            if sync:
+                optimizer.step()
+                optimizer.zero_grad()
+                current_lr = lr_schedule.step()
+            step = step + 1
+
             metrics.update({'loss': loss, 'loss/mse(z)': 0.5 * (z**2).mean(), 'loss/log(|det|)': logdets.mean()})
             if args.dry_run:
                 break
@@ -192,6 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_samples', default=4096, type=int, help='Number of sampels to draw')
     parser.add_argument('--sample_batch_size', default=256, type=int, help='Batch size for drawing samples')
     parser.add_argument('--resume', default='', type=str, help='path for checkpoint to resume training from')
+    parser.add_argument('--acc', default=1, type=int, help='grad accumulation')
 
     parser.add_argument('--nvp', default=True, action=argparse.BooleanOptionalAction, help='Whether to use the non volume preserving version')
     parser.add_argument(
@@ -199,6 +206,9 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--dry_run', default=False, action=argparse.BooleanOptionalAction, help='Dry run for quick tests'
+    )
+    parser.add_argument(
+        '--ckpt', default=False, action=argparse.BooleanOptionalAction, help='Dry run for quick tests'
     )
     args = parser.parse_args()
 

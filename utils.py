@@ -135,11 +135,11 @@ def get_data(dataset: str, img_size: int, folder: pathlib.Path) -> tuple[torch.u
         ]
     )
     if dataset == 'imagenet64':
-        data = tv.datasets.ImageFolder(str(folder / 'imagenet64'), transform=transform)
+        data = tv.datasets.ImageFolder(str(folder), transform=transform)
     elif dataset == 'imagenet':
-        data = tv.datasets.ImageFolder(str(folder / 'imagenet'), transform=transform)
+        data = tv.datasets.ImageFolder(str(folder), transform=transform)
     elif dataset == 'afhq':
-        data = tv.datasets.ImageFolder(str(folder / 'afhq'), transform=transform)
+        data = tv.datasets.ImageFolder(str(folder), transform=transform)
     else:
         raise NotImplementedError(f'Unknown dataset {dataset}')
     return data, get_num_classes(dataset)

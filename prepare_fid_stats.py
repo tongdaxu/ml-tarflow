@@ -7,7 +7,7 @@ import pathlib
 
 import torch
 import torch.utils.data
-
+from tqdm import tqdm
 import utils
 
 
@@ -15,8 +15,7 @@ def main(args):
     dist = utils.Distributed()
     data, _ = utils.get_data(args.dataset, args.img_size, args.data)
 
-    fid_stats_file = args.data / f'{args.dataset}_{args.img_size}_fid_stats.pth'
-    assert not fid_stats_file.exists()
+    fid_stats_file = f'{args.dataset}_{args.img_size}_fid_stats.pth'
     fid = utils.FID(reset_real_features=False, normalize=True).cuda()
     dist.barrier()
 
@@ -27,7 +26,7 @@ def main(args):
         data, sampler=data_sampler, batch_size=args.batch_size // dist.world_size, num_workers=8, drop_last=False
     )
 
-    for x, _ in data_loader:
+    for x, _ in tqdm(data_loader):
         x = x.cuda()
         fid.update(dist.gather_concat(0.5 * (x + 1)), real=True)
 
